@@ -1,0 +1,12 @@
+name: pigait
+
+channels:
+- conda-forge
+
+dependencies:
+
+- python=3.9.7
+- pip=22.1
+
+- pip:
+  - -e .[dev]

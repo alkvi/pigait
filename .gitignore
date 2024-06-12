@@ -1,0 +1,11 @@
+# Directories
+*.egg-info/
+__pycache__/
+.pytest_cache/
+build/
+dist/
+.vscode/
+
+# Files
+.coverage
+coverage.xml
