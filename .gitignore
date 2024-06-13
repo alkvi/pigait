@@ -5,6 +5,11 @@ __pycache__/
 build/
 dist/
 .vscode/
+docs/build
+docs/source/modules*.rst
+docs/source/pigait*.rst
+docs/source/_static
+docs/source/_templates
 
 # Files
 .coverage

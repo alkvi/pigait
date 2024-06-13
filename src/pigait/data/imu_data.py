@@ -35,7 +35,7 @@ class IMUData:
         sampling frequency
     sensor_position : string | None
         Position of sensor
-    events : array of GaitEvent
+    events : array of :py:class:`pigait.data.event_data.GaitEvent`
         Gait events occurring in the data
     length : int
         Length of total signal
@@ -131,7 +131,7 @@ class IMUData:
 
         Returns
         ----------
-        data : IMUData
+        data : :py:class:`IMUData`
             Cropped instance of data
         """
 
@@ -157,7 +157,7 @@ class IMUData:
 
         Parameters
         ----------
-        event : GaitEvent
+        event : :py:class:`pigait.data.event_data.GaitEvent`
             Event to add
         """
 
@@ -169,7 +169,7 @@ class IMUData:
 
         Parameters
         ----------
-        events : array of GaitEvent
+        events : array of :py:class:`pigait.data.event_data.GaitEvent`
             Events to add
         """
 
@@ -192,13 +192,13 @@ class IMUData:
 
         Parameters
         ----------
-        start_side : GaitEventSide
+        start_side : :py:class:`pigait.data.event_data.GaitEventSide`
             Which side to start assigning from. Events
             occurring before the first event on this side
             will be discarded
-        start_type : GaitEventType
+        start_type : :py:class:`pigait.data.event_data.GaitEventType`
             Which type to start assigning from. Events
-            occurring before the first event on this side
+            occurring before the first event of this type
             will be discarded
         """
 
@@ -241,14 +241,14 @@ class IMUData:
 
         Parameters
         ----------
-        event_type : GaitEventType
+        event_type : :py:class:`pigait.data.event_data.GaitEventType`
             Which type of gait events to get
-        side : GaitEventSide | None
+        side : :py:class:`pigait.data.event_data.GaitEventSide` | None
             Which side to get events from
 
         Returns
         ----------
-        events : array of GaitEvent
+        events : array of :py:class:`pigait.data.event_data.GaitEvent`
             Events of specified type
         """
 
@@ -266,7 +266,7 @@ class IMUData:
 
         Returns
         ----------
-        event : GaitEvent
+        event : :py:class:`pigait.data.event_data.GaitEvent`
             The first event that occurred (with the lowest sample index)
         """
 

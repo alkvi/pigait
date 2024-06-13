@@ -80,14 +80,14 @@ class GaitEvent:
 
     Attributes
     ----------
-    type : enum
-        a formatted string to print out what the animal says
-    side : enum
-        the name of the animal
+    type : :py:class:`GaitEventType`
+        Type of event
+    side : :py:class:`GaitEventSide`
+        Which side the event occurred on
     sample_idx : int
-        the sound that the animal makes
-    validity : enum
-        the number of legs the animal has (default 4)
+        Which sample the event occurred on
+    validity : :py:class:`GaitEventValidity`
+        Validity of the event
     """
 
     # Constructor
