@@ -151,7 +151,7 @@ class IMUData:
         # TODO: take care of events outside crop
         return start_frame, end_frame
 
-    def add_event(self, event):
+    def add_event(self, event, sort=False):
         """
         Add a gait event
 
@@ -159,11 +159,15 @@ class IMUData:
         ----------
         event : :py:class:`pigait.data.event_data.GaitEvent`
             Event to add
+        sort : bool
+            Sort events by sample index after adding
         """
 
         self.events.append(event)
+        if sort:
+            self.events.sort(key=lambda x: x.sample_idx, reverse=False)
 
-    def add_events(self, events):
+    def add_events(self, events, sort=False):
         """
         Add gait events
 
@@ -171,9 +175,13 @@ class IMUData:
         ----------
         events : array of :py:class:`pigait.data.event_data.GaitEvent`
             Events to add
+        sort : bool
+            Sort events by sample index after adding
         """
 
         self.events.extend(events)
+        if sort:
+            self.events.sort(key=lambda x: x.sample_idx, reverse=False)
 
     def _get_opposite_side(self, side):
         if side == event_data.GaitEventSide.RIGHT:

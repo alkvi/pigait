@@ -78,7 +78,6 @@ def _find_invalid_hs(hs_idx, to_idx):
     return invalid_hs_idx
 
 
-# Calculates HS and TO with CWT, based on Pham et al., 2017.
 def add_hs_to_wavelet(data, ap_axis=0, wavelet_type="gaus1",
                       plot_detected_results=False):
     """
@@ -89,7 +88,7 @@ def add_hs_to_wavelet(data, ap_axis=0, wavelet_type="gaus1",
 
     Parameters
     ----------
-    data : IMUData
+    data : :py:class:`pigait.data.imu_data.IMUData`
         Data containing IMU raw data
     ap_axis : int
         Which axis is the anterior-posterior axis (default 0)
@@ -184,3 +183,193 @@ def add_hs_to_wavelet(data, ap_axis=0, wavelet_type="gaus1",
         plot_signal.plot_wavelet_events(data, acc_ap_pp=acc_ap_pp,
                                         acc_wave_detrended=acc_wave_detrended,
                                         acc_wave_2=acc_wave_2)
+
+
+# Calculates HS, TO and FF with gyroscope data, based on Salarian et al., 2004.
+# TODO: make parameters configurable
+def add_hs_to_gyro(data, event_side=None, plot_detected_results=False):
+    """
+    Detects heel strikes, toe off, mid-swing and foot-flat events
+    in supplied data, and adds events to supplied data object.
+    Event detection is done via peak detection on gyroscope data,
+    specifically the y axis representing rotation around the mediolateral
+    axis (pitch),
+    based on Salarian et al., 2004 (https://doi.org/10.1109/tbme.2004.827933)
+
+    Parameters
+    ----------
+    data : :py:class:`pigait.data.imu_data.IMUData`
+        Data containing IMU raw data
+    event_side : :py:class:`pigait.data.event_data.GaitEventSide`
+        Which side detected events should be assigned
+    plot_detected_results : bool
+        Plot the signal with detected events
+    """
+
+    # we called on this 2 times, one for each foot
+    # hs_lf, to_lf, ff_lf, stance_lf = -gyro_data_lf_cut[:,1]
+    # hs_rf, to_rf, ff_rf, stance_rf = -gyro_data_rf_cut[:,1]
+    # just do both here? no, we take one sensor...
+
+    # We'll use the gyroscope data in the -y direction,
+    # assumed to be rotation around the mediolateral axis,
+    # i.e. pitch
+    gyro_data = -data.gyro_data[:, 1]
+
+    # Normalize data
+    gyro_data = scipy.stats.zscore(gyro_data)
+
+    # Prepare a filter
+    # Order 48 FIR, low-pass, cutoff 30 Hz
+    fn = data.fs / 2
+    b = scipy.signal.firwin(48, 30 / fn, pass_zero="lowpass")
+
+    # First identify maxima of signal to identifty mid-swing
+    # Salarian et al 2004: Those peaks that were larger than
+    # 50 deg/s were candidates
+    # If multiple adjacent peaks within a maximum distance of
+    # 500 ms were detected,
+    # the peak with the highest amplitude was selected and the
+    # others were discarded
+    min_midswing_height = 1  # normalized signal, not an absolute value
+    min_peak_distance_time = 0.5
+    min_midswing_distance_samples = int(data.fs * min_peak_distance_time)
+    ms_idx, _ = scipy.signal.find_peaks(gyro_data, height=min_midswing_height,
+                                        distance=min_midswing_distance_samples)
+
+    # Salarian et al 2004: local minimum peaks of shank signal
+    # inside interval -1.5s +1.5s were searched.
+    # The nearest local minimum after MS was selected as IC.
+    search_interval = 1.5
+    search_interval_samples = int(data.fs * search_interval)
+
+    # Scan around each mid-swing
+    all_hs = np.array([])
+    all_to = np.array([])
+    for i in range(0, len(ms_idx)):
+        t_ms_idx = ms_idx[i]
+        start_idx = int(t_ms_idx - search_interval_samples)
+        end_idx = int(t_ms_idx + search_interval_samples)
+        if start_idx < 0:
+            start_idx = 0
+        if end_idx > len(gyro_data)-1:
+            end_idx = len(gyro_data)-1
+
+        signal_interval = gyro_data[start_idx:end_idx]
+
+        # Salarian et al 2004: to smooth the signal and
+        # to get rid of spurious peaks, the signal was filtered
+        # using a low-pass FIR filter with cutoff frequency
+        # of 30 Hz and pass-band attenuation of less than 0.5 dB.
+        signal_interval = scipy.signal.filtfilt(b, [1.0], signal_interval)
+
+        # The nearest local minimum after the t_ms
+        # was selected as IC (i.e. HS).
+        min_peak_height = 0.1
+        if search_interval_samples > t_ms_idx:
+            signal_interval_hs = signal_interval[t_ms_idx:-1]
+        else:
+            signal_interval_hs = signal_interval[
+                search_interval_samples:-1]
+
+        # In case we have a very tiny segment, use argmax for peak.
+        # Otherwise find_peaks.
+        if (len(signal_interval_hs)) < 1:
+            # Interval might be at the end of signal, leave empty
+            hs_idx = []
+        elif (len(signal_interval_hs)) < 3:
+            hs_idx = [np.argmax(signal_interval_hs)]
+        else:
+            hs_idx, _ = scipy.signal.find_peaks(-signal_interval_hs,
+                                                height=min_peak_height)
+
+        # Add HS if found
+        if len(hs_idx) > 0:
+            hs_idx = hs_idx[0]
+            all_hs = np.append(all_hs, t_ms_idx+hs_idx)
+
+        # Salarian et al 2004: the minimum prior to t_ms
+        # with amplitude less than -20 deg/s was
+        # selected as the terminal contact (i.e. TO).
+        if search_interval_samples < t_ms_idx:
+            signal_interval_to = signal_interval[0: search_interval_samples]
+        else:
+            signal_interval_to = signal_interval[0: t_ms_idx]
+
+        # Find TO and add if found
+        min_peak_height = 1
+        min_to_distance = 0.15
+        min_to_distance_samples = int(data.fs * min_to_distance)
+        to_idx, _ = scipy.signal.find_peaks(-signal_interval_to,
+                                            height=min_peak_height,
+                                            distance=min_to_distance_samples)
+        if len(to_idx) >= 1:
+            to_idx = to_idx[-1]
+            all_to = np.append(all_to, start_idx+to_idx)
+
+    # Make sure we have integers
+    all_hs = all_hs.astype(int)
+    all_to = all_to.astype(int)
+    all_ms = ms_idx.astype(int)
+
+    # Also return foot flat and stance time points.
+    # Stance is time between HS and TO on same leg.
+    # Identify foot flat times as when angular velocity absolute value
+    # is below a certain threshold, during each stance phase.
+    all_tff = np.array([])
+    for i in range(0, len(all_hs)):
+
+        hs = all_hs[i]
+        next_to = all_to[all_to > hs]
+        if (len(next_to) < 1):
+            continue
+        next_to = next_to[0]
+
+        gyro_interval_times = np.array(range(hs, next_to))
+        gyro_interval = gyro_data[hs:next_to]
+        gyro_interval_flat_time = gyro_interval_times[
+            np.where(abs(gyro_interval) < 0.2)[0]]
+
+        # Only take instants
+        if len(gyro_interval_flat_time) < 1:
+            continue
+        median_idx = int(np.floor(len(gyro_interval_flat_time)/2))
+        ff_median = gyro_interval_flat_time[median_idx]
+        all_tff = np.append(all_tff, ff_median)
+    all_tff = all_tff.astype(int)
+
+    # Add all events to specified side, if any
+    side = event_data.GaitEventSide.NA
+    if event_side:
+        side = event_side
+
+    # For now, consider all events valid
+    validity = event_data.GaitEventValidity.VALID
+
+    # Add events to data
+    for hs_idx in all_hs:
+        event = event_data.GaitEvent(event_data.GaitEventType.HEEL_STRIKE,
+                                     side, hs_idx,
+                                     validity=validity)
+        data.add_event(event)
+
+    for to_idx in all_to:
+        event = event_data.GaitEvent(event_data.GaitEventType.TOE_OFF,
+                                     side, to_idx,
+                                     validity=validity)
+        data.add_event(event)
+
+    for ms_idx in all_ms:
+        event = event_data.GaitEvent(event_data.GaitEventType.MID_SWING,
+                                     side, ms_idx,
+                                     validity=validity)
+        data.add_event(event)
+
+    for tff_idx in all_tff:
+        event = event_data.GaitEvent(event_data.GaitEventType.FOOT_FLAT,
+                                     side, tff_idx,
+                                     validity=validity)
+        data.add_event(event)
+
+    if plot_detected_results:
+        plot_signal.plot_gyro_detection(data, side, gyro_data)

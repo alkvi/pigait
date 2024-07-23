@@ -18,6 +18,14 @@ class GaitEventType(Enum):
     """
     A toe off, or final contact
     """
+    MID_SWING = 3
+    """
+    The moment the limb is in mid-swing
+    """
+    FOOT_FLAT = 4
+    """
+    The moment the foot is still
+    """
 
     def __lt__(self, other):
         if self.__class__ is other.__class__:

@@ -254,3 +254,77 @@ def get_step_length_speed_lumbar(data, subject_height):
         walking_speeds = np.append(walking_speeds, walking_speed)
 
     return step_lengths, walking_speeds
+
+
+# Stride lengths and walking speeds from 3D positions of foot sensor.
+# Stride: how much one foot travels from FF to FF.
+def get_stride_length_walking_speed_foot(data, heading_steps=2,
+                                         min_lim=0,
+                                         max_lim=2):
+    """
+    Calculates stride lengths and walking speed from supplied data with events.
+    Calculates for a single foot, based on the 3D positions of the sensor.
+    TODO: document assumptions, fix trajectory plot
+
+    Parameters
+    ----------
+    data : IMUData
+        Data containing IMU raw data
+
+    Returns
+    ----------
+    step_lengths : array of float
+        Array of calculated step lengths in m
+    walking_speeds : array of float
+        Array of calculated walking speeds in m/s
+
+    """
+
+    # Get foot-flat events
+    ff_events = data.get_events(event_data.GaitEventType.FOOT_FLAT)
+    ff_indices = [event.sample_idx for event in ff_events]
+
+    # Get start and end positions
+    end_ff = ff_indices[-1]
+    # start_pos = data.position[0, :]
+    if end_ff >= data.position.shape[0]:
+        end_ff = data.position.shape[0]-1
+        ff_indices[-1] = end_ff
+    end_pos = data.position[end_ff, :]
+
+    # Calculate strides between foot flats
+    stride_lengths = []
+    walking_speeds = []
+    for ff_idx in range(0, len(ff_indices) - 1):
+        ff = ff_indices[ff_idx]
+        next_ff = ff_indices[ff_idx + 1]
+        pos_first = data.position[ff, :]
+        pos_second = data.position[next_ff, :]
+        pos_diff = pos_second - pos_first
+
+        # Project stride vector into a local heading direction.
+        # If heading_steps additional FFs exist,
+        # use the position of the last FF.
+        # Otherwise, use the final position.
+        if ff_idx+heading_steps < len(ff_indices):
+            heading_ff = ff_indices[ff_idx + heading_steps]
+            heading_vector = (data.position[heading_ff, :] -
+                              data.position[ff, :])
+        else:
+            heading_vector = end_pos - data.position[ff, :]
+
+        # Perform scalar projection
+        stride_length = (np.dot(pos_diff, heading_vector) /
+                         np.linalg.norm(heading_vector))
+
+        # Make sure stride is within certain limits
+        if stride_length < min_lim or stride_length > max_lim:
+            print((
+                f"Skipping stride length with "
+                f"value {stride_length} (outside limit)"))
+        else:
+            stride_lengths = np.append(stride_lengths, stride_length)
+            walking_speed = stride_length / ((next_ff-ff) / data.fs)
+            walking_speeds = np.append(walking_speeds, walking_speed)
+
+    return stride_lengths, walking_speeds

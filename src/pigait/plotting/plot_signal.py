@@ -37,22 +37,45 @@ def plot_wavelet_events(data, acc_ap_pp, acc_wave_detrended, acc_wave_2):
     plt.show()
 
 
-def plot_position(data):
+def plot_gyro_detection(data, side, gyro_data):
+    time_vector = data.time_vector
+    hs_events = data.get_events(event_data.GaitEventType.HEEL_STRIKE,
+                                side=side)
+    hs = [event.sample_idx for event in hs_events]
+    to_events = data.get_events(event_data.GaitEventType.TOE_OFF,
+                                side=side)
+    to = [event.sample_idx for event in to_events]
+    ms_events = data.get_events(event_data.GaitEventType.MID_SWING,
+                                side=side)
+    ms = [event.sample_idx for event in ms_events]
+    ff_events = data.get_events(event_data.GaitEventType.FOOT_FLAT,
+                                side=side)
+    ff = [event.sample_idx for event in ff_events]
+    plt.plot(time_vector, gyro_data, 'b', label='Gyro')
+    plt.plot(time_vector[hs], gyro_data[hs], linestyle='None',
+             color='red', label='HS', marker="*",  markersize=10)
+    plt.plot(time_vector[to], gyro_data[to], linestyle='None',
+             color='lime', label='TO', marker="*",  markersize=10)
+    plt.plot(time_vector[ff], gyro_data[ff], linestyle='None',
+             color='black', label='FF', marker="*",  markersize=10)
+    plt.plot(time_vector[ms], gyro_data[ms], linestyle='None',
+             color='yellow', label='MS', marker="*",  markersize=10)
+    plt.xlabel('Time [s]')
+    plt.legend(loc="upper right")
+    plt.show()
+
+
+def plot_position(data, events=None):
     # Get events to calculate positions between
-    hs_lf = data.get_events(event_data.GaitEventType.HEEL_STRIKE,
-                            event_data.GaitEventSide.LEFT)
-    hs_lf = [event.sample_idx for event in hs_lf]
-    hs_rf = data.get_events(event_data.GaitEventType.HEEL_STRIKE,
-                            event_data.GaitEventSide.RIGHT)
-    hs_rf = [event.sample_idx for event in hs_rf]
-    all_hs = np.sort(np.concatenate((hs_lf, hs_rf)))
+    all_event_idx = [event.sample_idx for event in events]
     plt.figure(0)
     ax = plt.axes(projection='3d')
     ax.set_box_aspect([1, 1, 1])
     ax.plot3D(data.position[:, 0], data.position[:, 1], data.position[:, 2],
               'gray')
-    ax.plot3D(data.position[:, 0][all_hs], data.position[:, 1][all_hs],
-              data.position[:, 2][all_hs], 'k*')
+    ax.plot3D(data.position[:, 0][all_event_idx],
+              data.position[:, 1][all_event_idx],
+              data.position[:, 2][all_event_idx], 'k*')
     ax.set_xlabel('X (East)')
     ax.set_ylabel('Y (North)')
     ax.set_zlabel('Z (Up)')
@@ -102,42 +125,62 @@ def plot_axes_with_hs(data, data_1, data_2, label):
     ax3.set_title(label + ' Z')
 
 
-# Plot a quaternion converted to euler angles
-def plot_euler(ax, q, ff, title_str):
+# Plot a quaternion
+def plot_quaternions_euler(q, ff):
+    fig, (ax1, ax2) = plt.subplots(2)
+
+    # Quaternions
+    t = np.arange(q.shape[0])
+    ax1.plot(t, q[:, 0], label='w')
+    ax1.plot(t, q[:, 1], label='x')
+    ax1.plot(t, q[:, 2], label='y')
+    ax1.plot(t, q[:, 3], label='z')
+    ax1.plot(ff, q[:, 0][ff], 'k*')
+    ax1.plot(ff, q[:, 1][ff], 'k*')
+    ax1.plot(ff, q[:, 2][ff], 'k*')
+    ax1.plot(ff, q[:, 3][ff], 'k*')
+    ax1.set_xlabel('Sample', fontsize=15)
+    ax1.set_ylim(-1, 1)
+    ax1.set_title("Quaternion", size=15)
+    ax1.tick_params(axis='both', which='major', labelsize=15)
+    ax1.tick_params(axis='both', which='minor', labelsize=13)
+    ax1.legend(loc="upper right")
+
+    # Euler angles
     euler_angles = np.array(
         [ahrs.Quaternion(q_arr).to_angles() for q_arr in q])
     euler_angles = np.degrees(euler_angles)
     t = np.arange(euler_angles.shape[0])
-    ax.plot(t, euler_angles[:, 0], label='x')
-    ax.plot(t, euler_angles[:, 1], label='y')
-    ax.plot(t, euler_angles[:, 2], label='z')
-    ax.plot(ff, euler_angles[:, 0][ff], 'k*')
-    ax.plot(ff, euler_angles[:, 1][ff], 'k*')
-    ax.plot(ff, euler_angles[:, 2][ff], 'k*')
-    ax.set_xlabel('Sample', fontsize=15)
-    ax.set_title(title_str, size=15)
-    ax.tick_params(axis='both', which='major', labelsize=15)
-    ax.tick_params(axis='both', which='minor', labelsize=13)
-    ax.legend(loc="upper right")
+    ax2.plot(t, euler_angles[:, 0], label='x')
+    ax2.plot(t, euler_angles[:, 1], label='y')
+    ax2.plot(t, euler_angles[:, 2], label='z')
+    ax2.plot(ff, euler_angles[:, 0][ff], 'k*')
+    ax2.plot(ff, euler_angles[:, 1][ff], 'k*')
+    ax2.plot(ff, euler_angles[:, 2][ff], 'k*')
+    ax2.set_xlabel('Sample', fontsize=15)
+    ax2.set_title("Euler", size=15)
+    ax2.tick_params(axis='both', which='major', labelsize=15)
+    ax2.tick_params(axis='both', which='minor', labelsize=13)
+    ax2.legend(loc="upper right")
+    plt.show()
 
 
-# Plot a quaternion
-def plot_quaternions(ax, q, ff, title_str):
-    t = np.arange(q.shape[0])
-    ax.plot(t, q[:, 0], label='w')
-    ax.plot(t, q[:, 1], label='x')
-    ax.plot(t, q[:, 2], label='y')
-    ax.plot(t, q[:, 3], label='z')
-    ax.plot(ff, q[:, 0][ff], 'k*')
-    ax.plot(ff, q[:, 1][ff], 'k*')
-    ax.plot(ff, q[:, 2][ff], 'k*')
-    ax.plot(ff, q[:, 3][ff], 'k*')
-    ax.set_xlabel('Sample', fontsize=15)
-    ax.set_ylim(-1, 1)
-    ax.set_title(title_str, size=15)
-    ax.tick_params(axis='both', which='major', labelsize=15)
-    ax.tick_params(axis='both', which='minor', labelsize=13)
-    ax.legend(loc="upper right")
+def plot_profile(ff, sensor_data, titlestr):
+    fig, (ax1, ax2, ax3) = plt.subplots(3)
+    for ff_idx in range(0, len(ff) - 1):
+        tff = ff[ff_idx]
+        next_tff = ff[ff_idx+1]
+        if tff == next_tff:
+            continue
+        data_interval = sensor_data[tff: next_tff, :]
+        t = np.arange(data_interval.shape[0])
+        ax1.plot(t, data_interval[:, 0])
+        ax2.plot(t, data_interval[:, 1])
+        ax3.plot(t, data_interval[:, 2])
+    ax1.set_title(f"{titlestr}: X")
+    ax2.set_title(f"{titlestr}: Y")
+    ax3.set_title(f"{titlestr}: Z")
+    plt.show()
 
 
 def plot_filter(gyro_data, acc_data, mag_data,
