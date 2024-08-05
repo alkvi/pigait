@@ -2,8 +2,10 @@
     Data classes for holding IMU data
 """
 
+from enum import Enum
 import numpy as np
 from ..data import event_data
+from ..plotting import plot_signal
 
 
 def _check_numpy_array(item, item_name="data"):
@@ -17,6 +19,51 @@ def _check_numpy_equal_shape(array_1, array_2):
     ax_2_eq = array_1.shape[1] == array_2.shape[1]
     if not ax_1_eq or not ax_2_eq:
         raise TypeError("Given arrays are not equal shape")
+
+
+class SensorPosition(Enum):
+    """
+    Enum for sensor position on body.
+    """
+
+    LUMBAR = 1
+    """
+    For sensors positioned around lumbar or back
+    """
+    LEFT_FOOT = 2
+    """
+    For sensors positioned on the left foot
+    """
+    RIGHT_FOOT = 3
+    """
+    For sensors positioned on the right foot
+    """
+    LEFT_ARM = 4
+    """
+    For sensors positioned on the left arm
+    """
+    RIGHT_ARM = 5
+    """
+    For sensors positioned on the right arm
+    """
+    CHEST = 6
+    """
+    For sensors positioned on the chest
+    """
+    NA = 7
+    """
+    Sensor position not applicable
+    """
+
+    def __lt__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value < other.value
+        return NotImplemented
+
+    def __eq__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value == other.value
+        return NotImplemented
 
 
 class IMUData:
@@ -33,7 +80,7 @@ class IMUData:
         Magnetometer data as TxN np array, T=samples, N=axes
     fs : float
         sampling frequency
-    sensor_position : string | None
+    sensor_position : Enum | None
         Position of sensor
     events : array of :py:class:`pigait.data.event_data.GaitEvent`
         Gait events occurring in the data
@@ -79,7 +126,7 @@ class IMUData:
         if sensor_position:
             self.sensor_position = sensor_position
         else:
-            self.sensor_position = "NA"
+            self.sensor_position = SensorPosition.NA
 
         # Some computed properties
         self._length = self.acc_data.shape[0]
@@ -210,6 +257,9 @@ class IMUData:
             will be discarded
         """
 
+        # Sort the events
+        self.events.sort(key=lambda x: x.sample_idx, reverse=False)
+
         # Remove any event that is before the starting event type, if any
         if start_type:
             start_event = [event for event in self.events if
@@ -229,19 +279,20 @@ class IMUData:
         start_type = self.events[0].event_type
         side_start_type = start_side
         side_other_type = self._get_opposite_side(start_side)
+
+        # If we assigned a heel strike one side (e.g. right),
+        # then the next toe off should be assigned the other
+        # side (e.g. left)
         for event in self.events:
+            if event.validity != event_data.GaitEventValidity.VALID:
+                event.side = side_start_type
+                continue
             if event.event_type == start_type:
                 event.side = side_start_type
+                side_start_type = self._get_opposite_side(side_start_type)
             else:
                 event.side = side_other_type
-            # If we assigned a heel strike one side (e.g. right),
-            # then the next toe off should be assigned the other
-            # side (e.g. left)
-            side_start_type = self._get_opposite_side(side_start_type)
-            side_other_type = self._get_opposite_side(side_other_type)
-
-        # Sort the events
-        self.events.sort(key=lambda x: x.sample_idx, reverse=False)
+                side_other_type = self._get_opposite_side(side_other_type)
 
     def get_events(self, event_type, side=None):
         """
@@ -281,3 +332,135 @@ class IMUData:
         events_copy = self.events.copy()
         events_copy.sort(key=lambda x: x.sample_idx, reverse=False)
         return events_copy[0]
+
+
+class SensorSet:
+    """
+    A set of multiple sensor data.
+    Combines gait events from included :py:class:`IMUData`
+    and constructs gait cycles.
+
+    Attributes
+    ----------
+    sensor_data : array of :py:class:`IMUData`
+            Data from sensors
+    events : array of :py:class:`pigait.data.event_data.GaitEvent`
+            Combined events of all included sensors
+    gait_cycles : array of :py:class:`pigait.data.event_data.GaitCycle`
+            All gait cycles found in the data
+    """
+
+    def __init__(self, sensor_data) -> None:
+        """
+        Parameters
+        ----------
+        sensor_data : array of :py:class:`IMUData`
+            Data from sensors
+        """
+
+        # TODO: check equal lengths
+        # TODO: assert one sensor per location max
+        self.gait_cycles = []
+        self.sensor_data = sensor_data
+
+        self.events = []
+        for sensor in sensor_data:
+            self.events.extend(sensor.events)
+        if len(self.events) > 0:
+            self.events.sort(key=lambda x: x.sample_idx, reverse=False)
+
+        self._construct_cycles()
+
+    def _construct_cycle(self, start_event, list_hs, list_to,
+                         list_hs_opposite, list_to_opposite):
+
+        # Make sure we have np arrays for easier comparison
+        list_hs = np.array(list_hs)
+        list_to = np.array(list_to)
+        list_hs_opposite = np.array(list_hs_opposite)
+        list_to_opposite = np.array(list_to_opposite)
+
+        # Start from HS, seek e.g. for right starting side
+        # RHS LTO LHS RTO RHS ...
+        hs_start = start_event
+
+        sample_indices = [event.sample_idx for event in list_to_opposite]
+        to_opposite = list_to_opposite[sample_indices > hs_start.sample_idx]
+        if len(to_opposite) < 1:
+            return None
+        to_opposite = to_opposite[0]
+
+        sample_indices = [event.sample_idx for event in list_hs_opposite]
+        hs_opposite = list_hs_opposite[sample_indices > to_opposite.sample_idx]
+        if len(hs_opposite) < 1:
+            return None
+        hs_opposite = hs_opposite[0]
+
+        sample_indices = [event.sample_idx for event in list_to]
+        to = list_to[sample_indices > hs_opposite.sample_idx]
+        if len(to) < 1:
+            return None
+        to = to[0]
+
+        sample_indices = [event.sample_idx for event in list_hs]
+        hs_end = list_hs[sample_indices > to.sample_idx]
+        if len(hs_end) < 1:
+            return None
+        hs_end = hs_end[0]
+
+        # If either HS event is invalid, skip this cycle
+        if (hs_start.validity != event_data.GaitEventValidity.VALID
+                or hs_end.validity != event_data.GaitEventValidity.VALID):
+            return None
+
+        cycle = event_data.GaitCycle(hs_start, to_opposite, hs_opposite,
+                                     to, hs_end)
+        return cycle
+
+    # TODO: assumptions, asserts
+    def _construct_cycles(self):
+        all_lhs = [event for event in self.events if (
+            event.event_type == event_data.GaitEventType.HEEL_STRIKE
+            and event.side == event_data.GaitEventSide.LEFT)]
+        all_rhs = [event for event in self.events if (
+            event.event_type == event_data.GaitEventType.HEEL_STRIKE
+            and event.side == event_data.GaitEventSide.RIGHT)]
+        all_lto = [event for event in self.events if (
+            event.event_type == event_data.GaitEventType.TOE_OFF
+            and event.side == event_data.GaitEventSide.LEFT)]
+        all_rto = [event for event in self.events if (
+            event.event_type == event_data.GaitEventType.TOE_OFF
+            and event.side == event_data.GaitEventSide.RIGHT)]
+
+        # Construct gait cycles from earliest starting HS event.
+        gait_cycles = []
+        if all_rhs[0].sample_idx < all_lhs[0].sample_idx:
+            for hs_idx in range(0, len(all_rhs)):
+                hs = all_rhs[hs_idx]
+                step = self._construct_cycle(hs, all_rhs, all_rto, all_lhs,
+                                             all_lto)
+                if step:
+                    gait_cycles.append(step)
+        else:
+            for hs_idx in range(0, len(all_lhs)):
+                hs = all_lhs[hs_idx]
+                step = self._construct_cycle(hs, all_lhs, all_lto, all_rhs,
+                                             all_rto)
+                if step:
+                    gait_cycles.append(step)
+        self.gait_cycles = gait_cycles
+
+    def plot_raw(self, axis=0, data_type="gyro"):
+        """
+        Plots data from all sensors in the set,
+        including any events
+
+        Parameters
+        ----------
+        axis : int
+            Which axis in sensors to plot
+        data_type : string
+            Which type of data to plot.
+            Choices: gyro, acc, mag
+        """
+        plot_signal.plot_sensors(self, axis=axis, data_type=data_type)

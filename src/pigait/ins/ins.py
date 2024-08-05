@@ -139,6 +139,7 @@ def calculate_positions_lumbar(data, stationary_samples=500,
     with heel strike events.
     Adds velocity and positions to the data structure.
     TODO: document assumptions of stationary, axis
+    TODO: should this be from sensor set?
 
     Parameters
     ----------

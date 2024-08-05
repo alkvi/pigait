@@ -206,11 +206,6 @@ def add_hs_to_gyro(data, event_side=None, plot_detected_results=False):
         Plot the signal with detected events
     """
 
-    # we called on this 2 times, one for each foot
-    # hs_lf, to_lf, ff_lf, stance_lf = -gyro_data_lf_cut[:,1]
-    # hs_rf, to_rf, ff_rf, stance_rf = -gyro_data_rf_cut[:,1]
-    # just do both here? no, we take one sensor...
-
     # We'll use the gyroscope data in the -y direction,
     # assumed to be rotation around the mediolateral axis,
     # i.e. pitch

@@ -5,15 +5,61 @@ import numpy as np
 from ..data import event_data
 
 
+def plot_sensors(sensor_set, axis=0, data_type="gyro"):
+    no_sensors = len(sensor_set.sensor_data)
+    fig, axes = plt.subplots(no_sensors)
+    for sensor_idx in range(0, no_sensors):
+        sensor = sensor_set.sensor_data[sensor_idx]
+        if data_type == "gyro":
+            raw_data = sensor.gyro_data
+        elif data_type == "acc":
+            raw_data = sensor.acc_data
+        elif data_type == "mag":
+            raw_data = sensor.mag_data
+        else:
+            raise ValueError("Data type not recognized")
+        t = np.arange(raw_data.shape[0])
+        if no_sensors > 1:
+            ax = axes[sensor_idx]
+        else:
+            ax = axes
+        ax.plot(t, raw_data[:, axis], label='gyro')
+
+        # Plot events if we have gait cycles
+        # TODO: this assumes first HS is right, otherwise labels should change
+        if len(sensor_set.gait_cycles) > 0:
+            invalid_events = [event.sample_idx for event in sensor_set.events
+                              if event.validity != event_data.GaitEventValidity.VALID]
+            rhs_idx = [step.hs_start.sample_idx for step
+                       in sensor_set.gait_cycles]
+            rhs_idx.extend([step.hs_end.sample_idx for step
+                            in sensor_set.gait_cycles])
+            rto_idx = [step.to.sample_idx for step in sensor_set.gait_cycles]
+            lhs_idx = [step.hs_opposite.sample_idx for step
+                       in sensor_set.gait_cycles]
+            lto_idx = [step.to_opposite.sample_idx for step
+                       in sensor_set.gait_cycles]
+            ax.plot(rhs_idx, raw_data[:, axis][rhs_idx], 'r*', label='HS_r')
+            ax.plot(lto_idx, raw_data[:, axis][lto_idx], 'g*', label='TO_l')
+            ax.plot(lhs_idx, raw_data[:, axis][lhs_idx], 'm*', label='HS_l')
+            ax.plot(rto_idx, raw_data[:, axis][rto_idx], 'c*', label='TO_r')
+            ax.plot(invalid_events, raw_data[:, axis][invalid_events], 'ko',
+                    label='invalid', alpha=0.5)
+
+        title = f"Sensor {sensor_idx+1} at position {sensor.sensor_position}"
+        ax.set_title(title)
+        ax.legend(loc="upper right")
+
+
 # Plot events
 def plot_wavelet_events(data, acc_ap_pp, acc_wave_detrended, acc_wave_2):
     time_vector = data.time_vector
     hs_idx = [event.sample_idx for event in data.events
-              if event.type == event_data.GaitEventType.HEEL_STRIKE]
+              if event.event_type == event_data.GaitEventType.HEEL_STRIKE]
     to_idx = [event.sample_idx for event in data.events
-              if event.type == event_data.GaitEventType.TOE_OFF]
+              if event.event_type == event_data.GaitEventType.TOE_OFF]
     inval_hs_idx = [event.sample_idx for event in data.events
-                    if (event.type == event_data.GaitEventType.HEEL_STRIKE
+                    if (event.event_type == event_data.GaitEventType.HEEL_STRIKE
                         and event.validity != event_data.GaitEventValidity.VALID)]
     hs_times = time_vector[hs_idx]
     to_times = time_vector[to_idx]

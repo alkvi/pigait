@@ -5,62 +5,66 @@
 
 import numpy as np
 from ..data import event_data
+from ..data import imu_data
 
 
-def get_step_time(data, start_side):
+def get_step_time(sensor_set, max_lim=None):
     """
-    Calculates step times from supplied data with events.
+    Calculates step times from supplied sensor set.
+    The sensor set must contain gait cycles.
     A step is heel strike on one foot, to heel strike
     on the opposite foot.
 
     Parameters
     ----------
-    data : IMUData
-        Data containing IMU raw data
-    start_side : GaitEventSide
-        Which side to start calculating steps from
+    sensor_set : :py:class:`SensorSet`
+        Data containing sensors with events
+    max_lim : float
+        Optional parameter for filtering values
 
     Returns
     ----------
-    step_times : array of float
+    step_times_left : array of float
+        Array of calculated step times in seconds
+    step_times_right : array of float
         Array of calculated step times in seconds
 
     """
 
-    hs_lf = data.get_events(event_data.GaitEventType.HEEL_STRIKE,
-                            event_data.GaitEventSide.LEFT)
-    hs_lf = np.array([event.sample_idx for event in hs_lf])
-    hs_rf = data.get_events(event_data.GaitEventType.HEEL_STRIKE,
-                            event_data.GaitEventSide.RIGHT)
-    hs_rf = np.array([event.sample_idx for event in hs_rf])
-    invalid_hs = [event.sample_idx for event in data.events if
-                  (event.event_type == event_data.GaitEventType.HEEL_STRIKE
-                   and event.validity != event_data.GaitEventValidity.VALID)]
+    fs = sensor_set.sensor_data[0].fs
+    invalid_events = [event.sample_idx for event in sensor_set.events if
+                      event.validity != event_data.GaitEventValidity.VALID]
+    step_times_left = []
+    step_times_right = []
+    for cycle in sensor_set.gait_cycles:
 
-    if start_side == event_data.GaitEventSide.RIGHT:
-        hs_start_side = hs_rf
-        hs_other_side = hs_lf
-    elif start_side == event_data.GaitEventSide.LEFT:
-        hs_start_side = hs_lf
-        hs_other_side = hs_rf
-    else:
-        raise TypeError("Unknown starting side")
-
-    step_times = []
-    for hs_idx in range(0, len(hs_start_side)):
-        hs = hs_start_side[hs_idx]
-        other_side_hs = hs_other_side[hs_other_side > hs]
-        if len(other_side_hs) < 1:
-            break
-        other_side_hs = other_side_hs[0]
-        if hs in invalid_hs or other_side_hs in invalid_hs:
+        if (cycle.hs_start.sample_idx in invalid_events
+            or cycle.hs_opposite.sample_idx in invalid_events
+                or cycle.hs_end.sample_idx in invalid_events):
             print("Skipping invalid step cycle for step time calculation")
             continue
-        hs_diff = other_side_hs - hs
-        step_time = hs_diff * 1 / data.fs
-        step_times = np.append(step_times, step_time)
 
-    return step_times
+        hs_diff = cycle.hs_opposite.sample_idx - cycle.hs_start.sample_idx
+        step_time_start = hs_diff * 1 / fs
+        hs_diff = cycle.hs_end.sample_idx - cycle.hs_opposite.sample_idx
+        step_time_opposite = hs_diff * 1 / fs
+
+        if max_lim and (step_time_start > max_lim
+                        or step_time_opposite > max_lim):
+            print((
+                f"Skipping gait cycle with "
+                f"value {step_time_start}/{step_time_opposite}"
+                f" - outside limit of {max_lim}"))
+            continue
+
+        if cycle.hs_start.side == event_data.GaitEventSide.RIGHT:
+            step_times_right = np.append(step_times_right, step_time_start)
+            step_times_left = np.append(step_times_left, step_time_opposite)
+        else:
+            step_times_left = np.append(step_times_left, step_time_start)
+            step_times_right = np.append(step_times_right, step_time_opposite)
+
+    return step_times_left, step_times_right
 
 
 def get_cadence(step_times):
@@ -85,49 +89,57 @@ def get_cadence(step_times):
     return cadence
 
 
-def get_single_support(data):
+def get_single_support(sensor_set):
     """
-    Calculates single support times from supplied data with events.
-    Single support L and R are calculated identically.
+    Calculates single support times from supplied sensor set.
     Start with a TO. Get time until next HS.
 
     Parameters
     ----------
-    data : IMUData
-        Data containing IMU raw data
+    sensor_set : :py:class:`SensorSet`
+        Data containing sensors with events
 
     Returns
     ----------
-    tss_times : array of float
+    tss_times_left : array of float
+        Array of calculated single support times in seconds
+    tss_times_right : array of float
         Array of calculated single support times in seconds
 
     """
 
-    hs = data.get_events(event_data.GaitEventType.HEEL_STRIKE)
-    hs = np.array([event.sample_idx for event in hs])
-    to = data.get_events(event_data.GaitEventType.TOE_OFF)
-    to = np.array([event.sample_idx for event in to])
-    invalid_hs = [event.sample_idx for event in data.events if
-                  (event.event_type == event_data.GaitEventType.HEEL_STRIKE
-                   and event.validity != event_data.GaitEventValidity.VALID)]
-    tss_times = []
-    for to_idx in range(0, len(to)):
-        to_frame = to[to_idx]
-        next_hs_frame = hs[hs > to_frame]
-        if len(next_hs_frame) == 0:
-            break
-        next_hs_frame = next_hs_frame[0]
-        if next_hs_frame in invalid_hs:
+    fs = sensor_set.sensor_data[0].fs
+    invalid_events = [event.sample_idx for event in sensor_set.events if
+                      event.validity != event_data.GaitEventValidity.VALID]
+    tss_times_left = []
+    tss_times_right = []
+    for cycle in sensor_set.gait_cycles:
+
+        to_frame = cycle.to_opposite.sample_idx
+        next_hs_frame = cycle.hs_opposite.sample_idx
+        next_to_frame = cycle.to.sample_idx
+        last_hs_frame = cycle.hs_end.sample_idx
+
+        if next_hs_frame in invalid_events or last_hs_frame in invalid_events:
             print("Skipping invalid step cycle for single support calculation")
             continue
-        tss = (next_hs_frame - to_frame) * (1 / data.fs)
-        tss_times = np.append(tss_times, tss)
-    return tss_times
+
+        tss_start = (next_hs_frame - to_frame) * (1 / fs)
+        tss_opposite = (last_hs_frame - next_to_frame) * (1 / fs)
+
+        if cycle.hs_start.side == event_data.GaitEventSide.RIGHT:
+            tss_times_right = np.append(tss_times_right, tss_start)
+            tss_times_left = np.append(tss_times_left, tss_opposite)
+        else:
+            tss_times_left = np.append(tss_times_left, tss_start)
+            tss_times_right = np.append(tss_times_right, tss_opposite)
+
+    return tss_times_left, tss_times_right
 
 
-def get_double_support(data):
+def get_double_support(sensor_set):
     """
-    Calculates double support times from supplied data with events.
+    Calculates double support times from supplied sensor set.
     Double support consists of both inital and terminal double support.
     Initial is between RHS and LTO. Terminal is between LHS and RTO.
     Add these together to get double support.
@@ -136,8 +148,8 @@ def get_double_support(data):
 
     Parameters
     ----------
-    data : IMUData
-        Data containing IMU raw data
+    sensor_set : :py:class:`SensorSet`
+        Data containing sensors with events
 
     Returns
     ----------
@@ -146,35 +158,37 @@ def get_double_support(data):
 
     """
 
-    hs = data.get_events(event_data.GaitEventType.HEEL_STRIKE)
-    hs = np.array([event.sample_idx for event in hs])
-    to = data.get_events(event_data.GaitEventType.TOE_OFF)
-    to = np.array([event.sample_idx for event in to])
+    fs = sensor_set.sensor_data[0].fs
     tds_times = []
-    for hs_idx in range(0, len(hs)):
-        right_hs_frame = hs[hs_idx]
-        left_to_frame = to[to > right_hs_frame]
-        if len(left_to_frame) == 0:
-            break
-        left_to_frame = left_to_frame[0]
-        initial_double_support = (left_to_frame - right_hs_frame) * 1 / data.fs
-        left_hs_frame = hs[hs > right_hs_frame]
-        if len(left_hs_frame) == 0:
-            break
-        left_hs_frame = left_hs_frame[0]
-        right_to_frame = to[to > left_hs_frame]
-        if len(right_to_frame) == 0:
-            break
-        right_to_frame = right_to_frame[0]
-        term_double_support = (right_to_frame - left_hs_frame) * 1 / data.fs
+    for cycle in sensor_set.gait_cycles:
+        initial_double_support = (cycle.to_opposite.sample_idx
+                                  - cycle.hs_start.sample_idx) * 1 / fs
+        term_double_support = (cycle.to.sample_idx
+                               - cycle.hs_opposite.sample_idx) * 1 / fs
         tds_times = np.append(tds_times,
                               initial_double_support + term_double_support)
     return tds_times
 
 
-def get_step_length_speed_lumbar(data, subject_height):
+# The amplitude of changes in vertical position (h)
+# was determined as the difference between highest and
+# lowest position during a step cycle
+# Assuming the lumbar sensor is placed around L5,
+# use factor l = height x 0.53 (Del Din 2016)
+def _get_step_length(z_interval, subject_height):
+    if len(z_interval) < 1:
+        print("No z position data between HS")
+        return None
+    delta_z = z_interval.max() - z_interval.min()
+    delta_z = abs(delta_z)
+    step_length = 2 * np.sqrt(2 * (subject_height / 100)
+                                * 0.53 * delta_z - np.power(delta_z, 2))
+    return step_length
+
+
+def get_step_length_speed_lumbar(sensor_set, subject_height):
     """
-    Calculates step lengths and walking speed from supplied data with events.
+    Calculates step lengths and walking speed from supplied sensor set.
     Calculates for left and right feet, based on positions of lumbar sensor.
     Method based on Ziljstra and Hof 2003
     (https://doi.org/10.1016/s0966-6362(02)00190-x)
@@ -183,77 +197,86 @@ def get_step_length_speed_lumbar(data, subject_height):
 
     Parameters
     ----------
-    data : IMUData
-        Data containing IMU raw data
+    sensor_set : :py:class:`SensorSet`
+        Data containing sensors with events
     subject_height : float
         Subject height in cm
 
     Returns
     ----------
-    step_lengths : array of float
+    step_lengths_left : array of float
         Array of calculated step lengths in m
-    walking_speeds : array of float
+    step_lengths_right : array of float
+        Array of calculated step lengths in m
+    walking_speeds_left : array of float
+        Array of calculated walking speeds in m/s
+    walking_speeds_right : array of float
         Array of calculated walking speeds in m/s
 
     """
 
-    hs_lf = data.get_events(event_data.GaitEventType.HEEL_STRIKE,
-                            event_data.GaitEventSide.LEFT)
-    hs_lf = [event.sample_idx for event in hs_lf]
-    hs_rf = data.get_events(event_data.GaitEventType.HEEL_STRIKE,
-                            event_data.GaitEventSide.RIGHT)
-    hs_rf = [event.sample_idx for event in hs_rf]
-    invalid_hs = [event.sample_idx for event in data.events if
-                  (event.event_type == event_data.GaitEventType.HEEL_STRIKE
-                   and event.validity != event_data.GaitEventValidity.VALID)]
-
-    hs_start_side = hs_rf
-    hs_other_side = hs_lf
-    if hs_lf[0] < hs_rf[0]:
-        hs_start_side = hs_lf
-        hs_other_side = hs_rf
+    lumbar_data = [sensor_data for sensor_data in sensor_set.sensor_data
+                   if sensor_data.sensor_position == imu_data.SensorPosition.LUMBAR]
+    if len(lumbar_data) != 1:
+        print("Requires one lumbar data sensor")
+    lumbar_data = lumbar_data[0]
 
     # Use Z positions and calculate parameters
-    z_positions = data.position[:, 2]
-    step_lengths = []
-    walking_speeds = []
-    for hs_idx in range(0, len(hs_start_side) - 1):
+    z_positions = lumbar_data.position[:, 2]
+    fs = sensor_set.sensor_data[0].fs
+    invalid_events = [event.sample_idx for event in sensor_set.events if
+                      event.validity != event_data.GaitEventValidity.VALID]
 
-        # Make sure we have enough HS to calculate this cycle
-        if hs_idx >= len(hs_other_side):
-            continue
-
-        # Make sure events are in the correct order
-        if hs_other_side[hs_idx] < hs_start_side[hs_idx]:
-            print(("Skipping wrong order step cycle for"
-                   " step length calculation"))
-            continue
+    step_lengths_left = []
+    step_lengths_right = []
+    walking_speeds_left = []
+    walking_speeds_right = []
+    for cycle in sensor_set.gait_cycles:
 
         # Skip cycles involving invalid steps
-        if (hs_other_side[hs_idx] in invalid_hs
-                or hs_start_side[hs_idx] in invalid_hs):
+        if (cycle.hs_opposite.sample_idx in invalid_events
+                or cycle.hs_start.sample_idx in invalid_events):
             print("Skipping invalid step cycle for step length calculation")
             continue
 
-        # The amplitude of changes in vertical position (h)
-        # was determined as the difference between highest and
-        # lowest position during a step cycle
-        # Assuming the lumbar sensor is placed around L5,
-        # use factor l = height x 0.53 (Del Din 2016)
-        z_interval = z_positions[hs_start_side[hs_idx]:hs_other_side[hs_idx]]
-        if len(z_interval) < 1:
-            print("No z position data between HS")
+        # Start side
+        z_interval = z_positions[cycle.hs_start.sample_idx:
+                                 cycle.hs_opposite.sample_idx]
+        step_length_start = _get_step_length(z_interval, subject_height)
+        if not step_length_start:
             continue
-        delta_z = z_interval.max() - z_interval.min()
-        delta_z = abs(delta_z)
-        step_length = 2 * np.sqrt(2 * (subject_height / 100)
-                                  * 0.53 * delta_z - np.power(delta_z, 2))
-        step_lengths = np.append(step_lengths, step_length)
-        hs_diff = hs_other_side[hs_idx] - hs_start_side[hs_idx]
-        walking_speed = step_length / (hs_diff / data.fs)
-        walking_speeds = np.append(walking_speeds, walking_speed)
+        hs_diff = cycle.hs_opposite.sample_idx - cycle.hs_start.sample_idx
+        walking_speed_start = step_length_start / (hs_diff / fs)
 
-    return step_lengths, walking_speeds
+        # Opposite side
+        z_interval = z_positions[cycle.hs_opposite.sample_idx:
+                                 cycle.hs_end.sample_idx]
+        step_length_opposite = _get_step_length(z_interval, subject_height)
+        if not step_length_opposite:
+            continue
+        hs_diff = cycle.hs_end.sample_idx - cycle.hs_opposite.sample_idx
+        walking_speed_opposite = step_length_opposite / (hs_diff / fs)
+
+        if cycle.hs_start.side == event_data.GaitEventSide.RIGHT:
+            step_lengths_right = np.append(step_lengths_right,
+                                           step_length_start)
+            walking_speeds_right = np.append(walking_speeds_right,
+                                             walking_speed_start)
+            step_lengths_left = np.append(step_lengths_left,
+                                          step_length_opposite)
+            walking_speeds_left = np.append(walking_speeds_left,
+                                            walking_speed_opposite)
+        else:
+            step_lengths_right = np.append(step_lengths_right,
+                                           step_length_opposite)
+            walking_speeds_right = np.append(walking_speeds_right,
+                                             walking_speed_opposite)
+            step_lengths_left = np.append(step_lengths_left, step_length_start)
+            walking_speeds_left = np.append(walking_speeds_left,
+                                            walking_speed_start)
+
+    return (step_lengths_left, step_lengths_right,
+            walking_speeds_left, walking_speeds_right)
 
 
 # Stride lengths and walking speeds from 3D positions of foot sensor.

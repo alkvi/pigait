@@ -108,4 +108,41 @@ class GaitEvent:
 
     def __str__(self):
         return (f"Event at idx {self.sample_idx}: side {self.side}, "
-                "type {self.event_type}, valid {self.validity}")
+                f"type {self.event_type}, valid {self.validity}")
+
+    def get_short_str(self):
+        """
+        Get a short string representation of the event
+        """
+        return f"{self.event_type}, {self.side}"
+
+
+class GaitCycle:
+    """
+    A complete gait cycle involving
+    events on both feet in order
+
+    Attributes
+    ----------
+    hs_start : :py:class:`GaitEvent`
+        A heel-strike, 1st event
+    to_opposite : :py:class:`GaitEvent`
+        A toe-off on opposite foot, 2nd event
+    hs_opposite : :py:class:`GaitEvent`
+        A heel-strike on opposite foot, 3rd event
+    to : :py:class:`GaitEvent`
+        A toe-off on start foot, 4th event
+    hs_end : :py:class:`GaitEvent`
+        A heel-strike on start foot, 5th event
+    """
+
+    def __init__(self, hs_start, to_opposite, hs_opposite, to, hs_end):
+        self.hs_start = hs_start
+        self.to_opposite = to_opposite
+        self.hs_opposite = hs_opposite
+        self.to = to
+        self.hs_end = hs_end
+
+    def __str__(self):
+        return (f"Gait cycle:\n{self.hs_start}\n{self.to_opposite}\n"
+                f"{self.hs_opposite}\n{self.to}\n{self.hs_end}")
