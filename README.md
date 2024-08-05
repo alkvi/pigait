@@ -1,5 +1,9 @@
 # pigait - **P**ython **I**MU **gait** analysis library
 
+![pylint](https://img.shields.io/badge/Pylint-9.80/10-green)
+![flake8](https://img.shields.io/badge/flake8-checked-blueviolet)
+![flake8](https://img.shields.io/badge/-Sphinx-000000?style=flat&logo=sphinx&logoColor=white)
+
 This python library contains algorithms for spatiotemporal gait parameter calculation from 3-axis IMU/MARG data (accelerometer, magnetometer, gyroscope).
 
 **If you are looking for a more complete project**, check out gaitmap: https://github.com/mad-lab-fau/gaitmap
@@ -34,6 +38,7 @@ Three combinations have been validated against data simultaneously captured from
 Results can be found in https://doi.org/10.1016/j.jbiomech.2023.111907 
 
 TODO:
-- Add examples
+- Add examples on open data
 - Add tests
+- More algorithms etc
 
