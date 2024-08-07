@@ -195,7 +195,18 @@ class IMUData:
         self.mag_data = self._crop_array(self.mag_data,
                                          start_frame, end_frame)
 
-        # TODO: take care of events outside crop
+        if self.velocity is not None and self.velocity.any():
+            self.velocity = self._crop_array(self.velocity,
+                                         start_frame, end_frame)
+        if self.position is not None and self.position.any():
+            self.position = self._crop_array(self.position,
+                                         start_frame, end_frame)
+
+        keep_events = [event for event in self.events if (event.sample_idx >= start_frame and event.sample_idx <= end_frame)]
+        for event in keep_events:
+            event.sample_idx = event.sample_idx - start_frame
+        self.events = keep_events
+
         return start_frame, end_frame
 
     def add_event(self, event, sort=False):
@@ -294,7 +305,7 @@ class IMUData:
                 event.side = side_other_type
                 side_other_type = self._get_opposite_side(side_other_type)
 
-    def get_events(self, event_type, side=None):
+    def get_events(self, event_type, side=None, sorted=False):
         """
         Get gait events of specified type
 
@@ -304,6 +315,8 @@ class IMUData:
             Which type of gait events to get
         side : :py:class:`pigait.data.event_data.GaitEventSide` | None
             Which side to get events from
+        sorted : bool
+            Sort returned events
 
         Returns
         ----------
@@ -317,6 +330,8 @@ class IMUData:
         else:
             events = [event for event in self.events if
                       event.event_type == event_type]
+        if sorted:
+            events.sort(key=lambda x: x.sample_idx, reverse=False)
         return events
 
     def get_first_event(self):
@@ -434,6 +449,9 @@ class SensorSet:
 
         # Construct gait cycles from earliest starting HS event.
         gait_cycles = []
+        if len(all_rhs) < 1 or len(all_lhs) < 1:
+            self.gait_cycles = gait_cycles
+            return
         if all_rhs[0].sample_idx < all_lhs[0].sample_idx:
             for hs_idx in range(0, len(all_rhs)):
                 hs = all_rhs[hs_idx]

@@ -11,7 +11,6 @@ This python library contains algorithms for spatiotemporal gait parameter calcul
 This library is not hosted on PyPi / ReadTheDocs. If you want to use it, install it locally:
 
 ~~~
-pip install -r pigait/requirements.txt
 pip install -e pigait
 ~~~
 
@@ -20,6 +19,7 @@ To build the sphinx documentation:
 ~~~
 cd pigait/docs
 sphinx-apidoc.exe -o ./source ../src
+make html
 ~~~
 
 Gait event detection methods:

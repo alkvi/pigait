@@ -24,6 +24,12 @@ def filter_signal_butter(data, low, order, plot_filter=False):
         Plot the signal with comparison before/after
     """
 
+    # Very short signals cannot be padded
+    if data.gyro_data.shape[0] < 15:
+        print("WARN: not filtering, signal too short")
+        print(data.gyro_data.shape)
+        return data
+
     fn = data.fs / 2
     b, a = scipy.signal.butter(order, low / fn, 'low')
     gyro_data_filt = scipy.signal.filtfilt(b, a, data.gyro_data, axis=0)
