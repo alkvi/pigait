@@ -34,7 +34,11 @@ def filter_signal_butter(data, low, order, plot_filter=False):
     b, a = scipy.signal.butter(order, low / fn, 'low')
     gyro_data_filt = scipy.signal.filtfilt(b, a, data.gyro_data, axis=0)
     acc_data_filt = scipy.signal.filtfilt(b, a, data.acc_data, axis=0)
-    mag_data_filt = scipy.signal.filtfilt(b, a, data.mag_data, axis=0)
+
+    if data.mag_data is not None:
+        mag_data_filt = scipy.signal.filtfilt(b, a, data.mag_data, axis=0)
+    else:
+        mag_data_filt = None
 
     if plot_filter:
         plot_signal.plot_filter(data.gyro_data, data.acc_data, data.mag_data,
